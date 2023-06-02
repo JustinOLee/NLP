@@ -1,8 +1,10 @@
 # models.py
 
+import math
+import random
+import numpy as np
 from sentiment_data import *
 from utils import *
-
 from collections import Counter
 
 class FeatureExtractor(object):
@@ -31,7 +33,25 @@ class UnigramFeatureExtractor(FeatureExtractor):
     and any additional preprocessing you want to do.
     """
     def __init__(self, indexer: Indexer):
-        raise Exception("Must be implemented")
+        self.indexer = indexer
+
+    def get_indexer(self):
+        return self.indexer
+    
+    def extract_features(self, sentence: List[str], add_to_indexer: bool = False) -> Counter:
+        indicies = []
+        for token in sentence:
+            token = token.lower()
+            idx = -1
+            if add_to_indexer:
+                idx = self.indexer.add_and_get_index(token)
+            else:
+                idx = self.indexer.index_of(token)
+
+            indicies.append(idx)
+        
+        return Counter(indicies)
+
 
 
 class BigramFeatureExtractor(FeatureExtractor):
@@ -39,7 +59,25 @@ class BigramFeatureExtractor(FeatureExtractor):
     Bigram feature extractor analogous to the unigram one.
     """
     def __init__(self, indexer: Indexer):
-        raise Exception("Must be implemented")
+        self.indexer = indexer
+
+    def get_indexer(self):
+        return self.indexer
+    
+    def extract_features(self, sentence: List[str], add_to_indexer: bool = False) -> Counter:
+        indicies = []
+        for i  in range(len(sentence) - 1):
+            firstWord = sentence[i].lower()
+            secondWord = sentence[i + 1].lower()
+            idx = -1
+            if add_to_indexer:
+                idx = self.indexer.add_and_get_index((firstWord, secondWord))
+            else:
+                idx = self.indexer.index_of((firstWord, secondWord))
+
+            indicies.append(idx)
+        
+        return Counter(indicies)
 
 
 class BetterFeatureExtractor(FeatureExtractor):
@@ -47,7 +85,25 @@ class BetterFeatureExtractor(FeatureExtractor):
     Better feature extractor...try whatever you can think of!
     """
     def __init__(self, indexer: Indexer):
-        raise Exception("Must be implemented")
+        self.indexer = indexer
+
+    def get_indexer(self):
+        return self.indexer
+    
+    def extract_features(self, sentence: List[str], add_to_indexer: bool = False) -> Counter:
+        indicies = []
+        for token in sentence:
+            token = token.lower()
+            idx = -1
+            if add_to_indexer:
+                idx = self.indexer.add_and_get_index(token)
+            else:
+                idx = self.indexer.index_of(token)
+
+            if idx not in indicies:
+                indicies.append(idx)
+        
+        return Counter(indicies)
 
 
 class SentimentClassifier(object):
@@ -76,8 +132,21 @@ class PerceptronClassifier(SentimentClassifier):
     superclass. Hint: you'll probably need this class to wrap both the weight vector and featurizer -- feel free to
     modify the constructor to pass these in.
     """
-    def __init__(self):
-        raise Exception("Must be implemented")
+    def __init__(self, weights: np.ndarray, featurizer: FeatureExtractor):
+        self.weights = weights
+        self.featurizer = featurizer
+    
+    def predict(self, sentence: List[str]) -> int:
+        counter = self.featurizer.extract_features(sentence)
+        total_weight = 0
+
+        for token in counter:
+            total_weight += counter[token] * self.weights[token]
+
+        if total_weight > 0:
+            return 1
+        return 0
+        
 
 
 class LogisticRegressionClassifier(SentimentClassifier):
@@ -86,28 +155,103 @@ class LogisticRegressionClassifier(SentimentClassifier):
     superclass. Hint: you'll probably need this class to wrap both the weight vector and featurizer -- feel free to
     modify the constructor to pass these in.
     """
-    def __init__(self):
-        raise Exception("Must be implemented")
+    def __init__(self, weights: np.ndarray, featurizer: FeatureExtractor):
+        self.weights = weights
+        self.featurizer = featurizer
+    
+    def predict(self, sentence: List[str]) -> int:
+        counter = self.featurizer.extract_features(sentence)
+        total_weight = 0
+
+        for token in counter:
+            total_weight += counter[token] * self.weights[token]
+
+        logs = math.exp(total_weight)
+
+        prob = logs / (1 + logs)
+
+        if prob > 0.5:
+            return 1
+        return 0
 
 
 def train_perceptron(train_exs: List[SentimentExample], feat_extractor: FeatureExtractor) -> PerceptronClassifier:
-    """
-    Train a classifier with the perceptron.
-    :param train_exs: training set, List of SentimentExample objects
-    :param feat_extractor: feature extractor to use
-    :return: trained PerceptronClassifier model
-    """
-    raise Exception("Must be implemented")
+    training_vectors = []
+    for ex in train_exs:
+        training_vectors.append((feat_extractor.extract_features(sentence=ex.words, add_to_indexer=True), ex.label))
+
+    indexer = feat_extractor.get_indexer()
+    weights = np.zeros(len(indexer))
+    
+    epochs = 20 
+    for epoch in range(1, epochs + 1):
+        lr = 1/epoch
+        random.shuffle(training_vectors)
+        for ex in training_vectors:
+            pred = 0
+            features = ex[0]
+            total_weight = 0
+
+            for feature in features:
+                total_weight += features[feature] * weights[feature]
+
+            if total_weight > 0:
+                pred = 1
+            
+            if pred != ex[1]:
+                if ex[1] == 1:
+                    for feature in features:
+                        weights[feature] += lr * features[feature]
+                else:
+                    for feature in features:
+                        weights[feature] -= lr * features[feature]
+    
+    return PerceptronClassifier(weights=weights, featurizer=feat_extractor)
 
 
 def train_logistic_regression(train_exs: List[SentimentExample], feat_extractor: FeatureExtractor) -> LogisticRegressionClassifier:
-    """
-    Train a logistic regression model.
-    :param train_exs: training set, List of SentimentExample objects
-    :param feat_extractor: feature extractor to use
-    :return: trained LogisticRegressionClassifier model
-    """
-    raise Exception("Must be implemented")
+    training_vectors = []
+    for ex in train_exs:
+        training_vectors.append((feat_extractor.extract_features(sentence=ex.words, add_to_indexer=True), ex.label))
+
+    indexer = feat_extractor.get_indexer()
+    weights = np.zeros(len(indexer))
+    
+    epochs = 20 
+    for epoch in range(1, epochs + 1):  
+        lr = 1/epoch
+        random.shuffle(training_vectors)
+        for ex in training_vectors:
+            pred = 0
+            features = ex[0]
+            total_weight = 0
+
+            for feature in features:
+                total_weight += features[feature] * weights[feature]
+
+            logs = math.exp(total_weight)
+            prob = logs / (1 + logs)
+            
+            if prob > 0.5:
+                pred = 1
+            
+            if pred == 1:
+                if ex[1] == 1:
+                    for feature in features:
+                        weights[feature] += lr * features[feature] * (1 - prob)
+                else:
+                    for feature in features:
+                        weights[feature] -= lr * features[feature] * (1 - prob)
+            else:
+                if ex[1] == 1:
+                    for feature in features:
+                        weights[feature] += lr * features[feature] * prob
+                else:
+                    for feature in features:
+                        weights[feature] -= lr * features[feature] * prob
+
+    return LogisticRegressionClassifier(weights=weights, featurizer=feat_extractor)
+    
 
 
 def train_model(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample]) -> SentimentClassifier:
